@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Soldier Shooter — Top-down Mini Game</title>
+  <style>
+    :root{--bg:#0b1020;--panel:#0f1724;--accent:#22c55e;--danger:#ef4444;--muted:#94a3b8}
+    html,body{height:100%;margin:0;font-family:Inter,system-ui,Arial,Helvetica,sans-serif;background:var(--bg);color:#e6eef8}
+    #gameWrap{display:flex;gap:12px;align-items:flex-start;padding:14px}
+    #ui{width:320px;max-height:calc(100vh - 28px);background:linear-gradient(180deg,rgba(255,255,255,0.02),transparent);border-radius:12px;padding:14px;box-shadow:0 6px 18px rgba(2,6,23,0.6);}
+    #canvasContainer{flex:1;display:flex;align-items:center;justify-content:center}
+    canvas{background:linear-gradient(180deg,#071026,#081225);border-radius:10px;box-shadow:0 6px 22px rgba(2,6,23,0.6);}
+    h1{margin:0 0 8px 0;font-size:18px}
+    p{margin:6px 0;color:var(--muted);font-size:13px}
+    .stat{display:flex;justify-content:space-between;padding:8px 6px;border-radius:8px;background:rgba(255,255,255,0.02);margin:6px 0}
+    button{cursor:pointer;padding:8px 12px;border-radius:8px;border:0;background:var(--accent);color:#042017;font-weight:600}
+    .small{font-size:12px;color:var(--muted)}
+    #controls{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+    label{font-size:12px;color:var(--muted)}
+    .row{display:flex;gap:8px}
+    .muted{color:var(--muted)}
+  </style>
+</head>
+<body>
+  <div id="gameWrap">
+    <div id="canvasContainer">
+      <canvas id="game" width="1000" height="700"></canvas>
+    </div>
+
+    <div id="ui">
+      <h1>Soldier Shooter — Top-down</h1>
+      <p class="small">You control a soldier in a top-down battlefield. Enemies spawn and chase — survive and rack up score.</p>
+
+      <div class="stat"><div>Score</div><div id="score">0</div></div>
+      <div class="stat"><div>HP</div><div id="hp">100</div></div>
+      <div class="stat"><div>Wave</div><div id="wave">0</div></div>
+      <div class="stat"><div>Enemies</div><div id="enemiesCount">0</div></div>
+
+      <div style="margin-top:12px">
+        <button id="startBtn">Start / Restart</button>
+      </div>
+
+      <div id="controls">
+        <div class="small muted">Controls</div>
+        <div class="row"><div class="muted">Move:</div><div>WASD or Arrow keys</div></div>
+        <div class="row"><div class="muted">Aim:</div><div>Mouse</div></div>
+        <div class="row"><div class="muted">Shoot:</div><div>Click or Space</div></div>
+        <div class="row"><div class="muted">Mobile:</div><div>Touch left to move, tap right to shoot</div></div>
+      </div>
+
+      <hr style="margin:12px 0;border:0;border-top:1px solid rgba(255,255,255,0.03)" />
+
+      <div class="small muted">Game features</div>
+      <ul style="padding-left:18px;margin:8px 0 0 0;color:var(--muted);font-size:13px">
+        <li>Player movement + mouse-aim shooting</li>
+        <li>Enemies that path toward player</li>
+        <li>Health, score, waves and difficulty ramp</li>
+        <li>Touch-friendly controls</li>
+      </ul>
+
+      <p style="margin-top:12px" class="small muted">Want upgrades, sounds, sprites, or a leaderboard? Tell me and I’ll add them.</p>
+    </div>
+  </div>
+
+  <script>
+  // Soldier Shooter — single-file minimal top-down shooter
+  (function(){
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    let W = canvas.width, H = canvas.height;
+
+    const scoreEl = document.getElementById('score');
+    const hpEl = document.getElementById('hp');
+    const waveEl = document.getElementById('wave');
+    const enemiesCountEl = document.getElementById('enemiesCount');
+    const startBtn = document.getElementById('startBtn');
+
+    let keys = {};
+    let mouse = {x: W/2, y: H/2, isDown:false};
+    let touchLeft = null;
+
+    function rand(min,max){ return Math.random()*(max-min)+min }
+    function clamp(v,a,b){ return Math.max(a,Math.min(b,v)) }
+
+    class Player{
+      constructor(){this.x=W/2;this.y=H/2;this.speed=3.2;this.radius=14;this.hp=100;this.fireCooldown=0;this.fireRate=9;}
+      update(){
+        let dx=0,dy=0;
+        if(keys['ArrowUp']||keys['w']) dy-=1;
+        if(keys['ArrowDown']||keys['s']) dy+=1;
+        if(keys['ArrowLeft']||keys['a']) dx-=1;
+        if(keys['ArrowRight']||keys['d']) dx+=1;
+        if(touchLeft){ dx+=touchLeft.dx; dy+=touchLeft.dy;}
+        if(dx||dy){const mag=Math.hypot(dx,dy)||1; dx/=mag; dy/=mag; this.x+=dx*this.speed; this.y+=dy*this.speed;}
+        this.x=clamp(this.x,this.radius,W-this.radius);
+        this.y=clamp(this.y,this.radius,H-this.radius);
+        if(this.fireCooldown>0) this.fireCooldown--;
+        if((mouse.isDown || keys[' ']) && this.fireCooldown===0){this.fireCooldown=this.fireRate; shootBullet(this.x,this.y,mouse.x,mouse.y);}
+      }
+      draw(){const ang=Math.atan2(mouse.y-this.y,mouse.x-this.x); ctx.save(); ctx.translate(this.x,this.y); ctx.rotate(ang);
+        ctx.fillStyle='#9fb7c7'; ctx.fillRect(-12,-12,24,24);
+        ctx.fillStyle='#2b6b9d'; ctx.fillRect(-12,-18,24,8);
+        ctx.fillStyle='#2b6b9d'; ctx.fillRect(10,-4,16,8); ctx.restore();}
+    }
+
+    class Bullet{constructor(x,y,vx,vy){this.x=x;this.y=y;this.vx=vx;this.vy=vy;this.radius=4;this.life=120}
+      update(){this.x+=this.vx;this.y+=this.vy;this.life--}
+      draw(){ctx.beginPath();ctx.arc(this.x,this.y,this.radius,0,Math.PI*2);ctx.fillStyle='#ffd966';ctx.fill()}}
+
+    class Enemy{constructor(x,y,strength=1){this.x=x;this.y=y;this.radius=12+Math.min(18,strength*2);this.speed=0.7+Math.min(1.8,strength*0.12);this.hp=10*strength;this.str=strength}
+      update(){const ang=Math.atan2(player.y-this.y,player.x-this.x); this.x+=Math.cos(ang)*this.speed; this.y+=Math.sin(ang)*this.speed;}
+      draw(){ctx.beginPath();ctx.arc(this.x,this.y,this.radius,0,Math.PI*2);ctx.fillStyle='#c94b4b';ctx.fill(); ctx.fillStyle='#fff'; ctx.fillRect(this.x-6,this.y-4,4,4);ctx.fillRect(this.x+2,this.y-4,4,4);}}
+
+    let player=new Player(); let bullets=[]; let enemies=[]; let score=0; let wave=0; let spawnTimer=0; let gameOver=false;
+
+    function reset(){player=new Player(); bullets=[]; enemies=[]; score=0; wave=0; spawnTimer=0; gameOver=false; updateUI();}
+    function startWave(){wave++; const count=4+Math.floor(wave*1.6); for(let i=0;i<count;i++){spawnEnemy(wave);} updateUI();}
+    function spawnEnemy(w){let edge=Math.floor(rand(0,4)); let x,y;if(edge===0){x=-30;y=rand(-30,H+30)}else if(edge===1){x=W+30;y=rand(-30,H+30)}else if(edge===2){x=rand(-30,W+30);y=-30}else{x=rand(-30,W+30);y=H+30}const strength=1+Math.floor(rand(0,Math.min(6,w/2))); enemies.push(new Enemy(x,y,strength));}
+    function shootBullet(sx,sy,tx,ty){const ang=Math.atan2(ty-sy,tx-sx); const sp=9; bullets.push(new Bullet(sx+Math.cos(ang)*20,sy+Math.sin(ang)*20,Math.cos(ang)*sp,Math.sin(ang)*sp));}
+    function updateUI(){scoreEl.textContent=score; hpEl.textContent=Math.max(0,Math.round(player.hp)); waveEl.textContent=wave; enemiesCountEl.textContent=enemies.length}
+
+    function loop(){
+      player.update(); bullets.forEach(b=>b.update()); bullets=bullets.filter(b=>b.life>0 && b.x>-50 && b.x<W+50 && b.y>-50 && b.y<H+50);
+      enemies.forEach(e=>e.update());
+      for(let i=enemies.length-1;i>=0;i--){const e=enemies[i];for(let j=bullets.length-1;j>=0;j--){const b=bullets[j];if(Math.hypot(e.x-b.x,e.y-b.y)<e.radius+b.radius){e.hp-=20; bullets.splice(j,1); if(e.hp<=0){enemies.splice(i,1); score+=10+Math.floor(wave*2);} break;}}}
+      for(let i=enemies.length-1;i>=0;i--){const e=enemies[i];if(Math.hypot(e.x-player.x,e.y-player.y)<e.radius+player.radius-4){player.hp-=10*(e.str/1.5); e.x+=(e.x-player.x)*0.2; e.y+=(e.y-player.y)*0.2;}}
+      if(enemies.length===0){spawnTimer++; if(spawnTimer>80){spawnTimer=0; startWave();}}
+      if(Math.random()<0.01+wave*0.001){if(Math.random()<0.35) spawnEnemy(wave)}
+      if(player.hp<=0 && !gameOver){gameOver=true; setTimeout(()=>{},100);}
+      drawAll(); updateUI(); requestAnimationFrame(loop);
+    }
+
+    function drawAll(){
+      ctx.clearRect(0,0,W,H);
+      ctx.save(); ctx.globalAlpha=0.06; ctx.strokeStyle='#ffffff'; ctx.lineWidth=1; const grid=60; for(let gx=0;gx<W;gx+=grid){ctx.beginPath();ctx.moveTo(gx,0);ctx.lineTo(gx,H);ctx.stroke();} for(let gy=0;gy<H;gy+=grid){ctx.beginPath();ctx.moveTo(0,gy);ctx.lineTo(W,gy);ctx.stroke();} ctx.restore();
+      bullets.forEach(b=>b.draw()); enemies.forEach(e=>e.draw()); player.draw();
+      ctx.beginPath(); ctx.arc(mouse.x,mouse.y,6,0,Math.PI*2); ctx.strokeStyle='rgba(255,255,255,0.35)'; ctx.stroke();
+      ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fillRect(12,12,200,14); const hpPerc=clamp(player.hp/100,0,1); ctx.fillStyle=hpPerc>0.35?'#34d399':'#fb7185'; ctx.fillRect(12,12,200*hpPerc,14); ctx.strokeStyle='rgba(255,255,255,0.06)'; ctx.strokeRect(12,12,200,14);
+      ctx.fillStyle='#dbeafe'; ctx.font='16px system-ui'; ctx.fillText('Score: '+score,12,56);
+      if(gameOver){ ctx.fillStyle='rgba(0,0,0,0.6)'; ctx.fillRect(W/2-200,H/2-80,400,160); ctx.fillStyle='#fff'; ctx.textAlign='center'; ctx.font='28px system-ui'; ctx.fillText('Game Over',W/2,H/2-18); ctx.font='16px system-ui'; ctx.fillText('Press Start / Restart to play again',W/2,H/2+12); ctx.textAlign='left';}
+    }
+
+    window.addEventListener('keydown', e=>{keys[e.key]=true; if(e.key===' '){e.preventDefault();}});
+    window.addEventListener('keyup', e=>{keys[e.key]=false;});
+    canvas.addEventListener('mousemove', e=>{const r=canvas.getBoundingClientRect(); mouse.x=(e.clientX-r.left)*(canvas.width/r.width); mouse.y=(e.clientY-r.top)*(canvas.height/r.height);});
+    canvas.addEventListener('mousedown', e=>{mouse.isDown=true}); window.addEventListener('mouseup', e=>{mouse.isDown=false});
+
+    canvas.addEventListener('touchstart',(ev)=>{ev.preventDefault(); const r=canvas.getBoundingClientRect(); for(const t of ev.changedTouches){const x=(t.clientX-r.left)*(canvas.width/r.width); const y=(t.clientY-r.top)*(canvas.height/r.height); if(x<W/2){touchLeft={id:t.identifier,startX:x,startY:y,x:x,y:y,dx:0,dy:0};} else {mouse.x=x; mouse.y=y; shootBullet(player.x,player.y,x,y);}}},{passive:false});
+    canvas.addEventListener('touchmove',(ev)=>{ev.preventDefault(); const r=canvas.getBoundingClientRect(); for(const t of ev.changedTouches){const x=(t.clientX-r.left)*(canvas.width/r.width); const y=(t.clientY-r.top)*(canvas.height/r.height); if(touchLeft && t.identifier===touchLeft.id){const dx=x-touchLeft.startX; const dy=y-touchLeft.startY; touchLeft.dx=clamp(dx/60,-1,1); touchLeft.dy=clamp(dy/60,-1,1);}}},{passive:false});
+    canvas.addEventListener('touchend',(ev)=>{for(const t of ev.changedTouches){if(touchLeft && t.identifier===touchLeft.id){touchLeft=null}}});
+
+    function resize(){const container=canvas.parentElement; let targetW=Math.min(1200,Math.max(640,window.innerWidth-380)); let targetH=Math.min(900,Math.max(480,window.innerHeight-120)); canvas.width=targetW; canvas.height=targetH; W=canvas.width; H=canvas.height;}
+    window.addEventListener('resize',()=>{resize();});
+
+    startBtn.addEventListener('click',()=>{reset(); startWave();});
+
+    resize(); reset(); setTimeout(()=>startWave(),350); requestAnimationFrame(loop);
+  })();
+  </script>
+</body>
+</html>
